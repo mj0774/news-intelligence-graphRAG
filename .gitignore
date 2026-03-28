@@ -1,51 +1,26 @@
-﻿# OS / Editor
+﻿# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Build / cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Logs
+*.log
+
+# OS / Editor
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-*.so
-.python-version
-.venv/
-venv/
-env/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-
-# Node / Frontend
-node_modules/
-.npm/
-.pnpm-store/
-.next/
-dist/
-build/
-coverage/
-
-# Environment
-.env
-.env.*
-!.env.example
-
-# Logs
-*.log
-logs/
-
-# Data artifacts
-data/
-ingestion/data/
-ingestion/outputs/
-*.sqlite
-*.db
-*.parquet
-
-# Misc
-*.tmp
-*.bak
+# Data outputs
+*.xlsx
