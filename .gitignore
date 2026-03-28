@@ -2,6 +2,10 @@
 .venv/
 __pycache__/
 *.py[cod]
+.python-version
+.ipynb_checkpoints/
+.coverage
+htmlcov/
 
 # Env files
 .env
@@ -12,6 +16,10 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+dist/
+build/
+coverage/
+node_modules/
 
 # Logs
 *.log
@@ -24,3 +32,6 @@ Thumbs.db
 
 # Data outputs
 *.xlsx
+*.parquet
+*.db
+*.sqlite

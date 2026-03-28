@@ -1,10 +1,7 @@
 ﻿"""뉴스 엑셀 데이터를 Neo4j 그래프로 적재하는 빌더.
 
-흐름:
-1) data/ 폴더에서 엑셀 파일 로드(기본: 최신 파일)
-2) Neo4j 연결
-3) 텍스트 청킹
-4) Article/Content/Media/Category 노드 및 관계 생성
+참고 GraphBuilder.ipynb 로직을 기준으로,
+프로젝트 경로(data/, graph_builder/)만 맞춰 스크립트화한 버전이다.
 """
 
 from __future__ import annotations
@@ -42,7 +39,6 @@ def chunk_text(text: Any, chunk_size: int = DEFAULT_CHUNK_SIZE, overlap: int = D
     text = str(text)
     chunks: List[str] = []
 
-    # chunk_size-overlap 단위로 이동하면서 문맥이 이어지도록 일부를 겹친다.
     for i in range(0, len(text), chunk_size - overlap):
         chunk = text[i : i + chunk_size]
         if chunk.strip():
@@ -98,7 +94,6 @@ def create_content_nodes(
 ) -> None:
     """Content 청크 노드와 HAS_CHUNK 관계를 생성한다."""
     for i, chunk in enumerate(content_chunks):
-        # 같은 기사 내 청크 순번으로 content_id를 고정한다.
         content_id = f"{article_id}_chunk_{i}"
 
         query = """
@@ -168,8 +163,8 @@ def create_category_node_and_relationship(tx: neo4j.Transaction, article_id: str
 
 
 def build_graph_from_dataframe(
-    driver: neo4j.Driver,
     df: pd.DataFrame,
+    driver: neo4j.Driver,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     overlap: int = DEFAULT_OVERLAP,
 ) -> None:
@@ -179,7 +174,6 @@ def build_graph_from_dataframe(
             try:
                 article_id = row.get("article_id", "")
 
-                # Article 노드에 들어갈 기본 속성
                 article_data = {
                     "article_id": article_id,
                     "title": row.get("title", ""),
@@ -187,24 +181,24 @@ def build_graph_from_dataframe(
                     "published_date": str(row.get("published_date", "")),
                 }
 
-                # 1) Article 생성
+                # 1. Article 노드 생성
                 session.execute_write(create_article_node, article_data)
 
-                # 2) Content 청크 생성 + HAS_CHUNK 관계
+                # 2. Content 노드들 생성 (content 컬럼이 있는 경우)
                 if "content" in row and pd.notna(row["content"]) and row["content"] != "":
                     content_chunks = chunk_text(row["content"], chunk_size, overlap)
                     if content_chunks:
                         session.execute_write(create_content_nodes, article_id, content_chunks, article_data)
 
-                # 3) Media 노드 + PUBLISHED 관계
+                # 3. Media 노드와 관계 생성
                 if "source" in row:
                     session.execute_write(create_media_node_and_relationship, article_id, row["source"])
 
-                # 4) Category 노드 + BELONGS_TO 관계
+                # 4. Category 노드와 관계 생성
                 if "category" in row:
                     session.execute_write(create_category_node_and_relationship, article_id, row["category"])
 
-                # 진행률 로그
+                # 진행상황 출력
                 if (idx + 1) % 10 == 0:
                     print(f"진행률: {idx + 1}/{len(df)} ({((idx + 1) / len(df) * 100):.1f}%)")
 
@@ -230,7 +224,7 @@ def main() -> None:
     # .env에서 Neo4j 접속정보를 로드한다.
     load_dotenv()
     uri = os.getenv("NEO4J_URI", "neo4j://localhost:7687")
-    auth = ("neo4j", os.getenv("NEO4J_PASSWORD", "password"))
+    auth = (os.getenv("NEO4J_USERNAME", "neo4j"), os.getenv("NEO4J_PASSWORD", "password"))
 
     # 입력 파일 경로: 지정값 우선, 없으면 data 폴더 최신 파일 자동 선택
     input_path = Path(args.input) if args.input else find_latest_excel(DATA_DIR)
@@ -248,8 +242,8 @@ def main() -> None:
             session.execute_write(create_constraints)
 
         build_graph_from_dataframe(
-            driver=driver,
             df=df,
+            driver=driver,
             chunk_size=args.chunk_size,
             overlap=args.overlap,
         )
