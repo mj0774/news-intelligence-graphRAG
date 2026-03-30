@@ -1,4 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
+
+"""VectorCypherRetriever 래퍼 모듈.
+
+벡터 검색으로 관련 Content를 찾은 뒤,
+Cypher 확장 조회로 Article/Category/related_articles 정보를 함께 가져온다.
+"""
 
 from typing import Any, Dict, List
 
@@ -10,12 +16,13 @@ from backend.retriever.common import enrich_articles_from_graph, items_to_articl
 
 
 class VectorCypherNewsRetriever:
-    """Vector + Cypher 확장 검색 retriever."""
+    """Vector + Cypher 결합형 retriever."""
 
     def __init__(self, driver: neo4j.Driver, embedder: Any, index_name: str = "content_vector_index") -> None:
         self.driver = driver
 
-        # 참고자료1의 수정 쿼리를 그대로 반영한다.
+        # 프로젝트 검색 목적에 맞춘 retrieval_query를 사용한다.
+        # 핵심: 유사 Content를 찾은 후 해당 Article과 Category, 연관 Article까지 확장 조회.
         retrieval_query = """
         WITH node AS content, score
         MATCH (content)<-[:HAS_CHUNK]-(article:Article)
@@ -51,6 +58,7 @@ class VectorCypherNewsRetriever:
 
     @staticmethod
     def _result_formatter(record: neo4j.Record) -> RetrieverResultItem:
+        """VectorCypher 조회 결과를 공통 기사 포맷으로 정규화한다."""
         chunk = str(record.get("chunk", ""))
         return RetrieverResultItem(
             content=chunk,
@@ -68,12 +76,15 @@ class VectorCypherNewsRetriever:
         )
 
     def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """벡터+그래프 결합 검색을 수행하고 기사 리스트를 반환한다."""
         result = self.retriever.search(query_text=query, top_k=top_k)
         articles = items_to_articles(result.items)
         return enrich_articles_from_graph(self.driver, articles)
 
     def to_tool(self):
+        """ToolsRetriever에서 사용할 Tool 객체로 변환한다."""
         return self.retriever.convert_to_tool(
             name="vectorcypher_retriever",
-            description="벡터 검색 후 그래프 관계(Category/Media)를 함께 확장해 검색합니다.",
+            description="기사의 상세 정보/전체 정보/본문을 요청할 때 사용. 특정 주제로 기사를 찾고 제목, URL, 날짜, 카테고리, 관련 기사까지 반환.",
         )
+

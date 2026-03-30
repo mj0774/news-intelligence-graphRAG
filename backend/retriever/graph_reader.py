@@ -1,6 +1,12 @@
 ﻿from __future__ import annotations
 
-from typing import Dict, List
+"""Neo4j 그래프 조회 모듈.
+
+프론트 초기 렌더링에 필요한 노드/엣지 데이터를 읽어와
+API 응답 형태로 가공한다.
+"""
+
+from typing import Any, Dict, List
 
 import neo4j
 
@@ -13,8 +19,13 @@ class GraphReader:
     def __init__(self, driver: neo4j.Driver) -> None:
         self.driver = driver
 
-    def fetch_graph(self, node_limit: int = 600, edge_limit: int = 1200) -> Dict[str, List[Dict[str, str]]]:
-        """Article/Category/Media/Content 서브그래프를 조회한다."""
+    def fetch_graph(self, node_limit: int = 600, edge_limit: int = 1200) -> Dict[str, List[Dict[str, Any]]]:
+        """Article/Category/Media/Content 서브그래프를 조회한다.
+
+        제한값(node_limit/edge_limit)을 두는 이유:
+        - 대용량 그래프에서 초기 화면 로딩 지연을 줄이기 위해
+        - 브라우저 렌더링 과부하를 방지하기 위해
+        """
         nodes_query = """
         MATCH (n)
         WHERE n:Article OR n:Category OR n:Media OR n:Content
@@ -42,19 +53,19 @@ class GraphReader:
         """
 
         with self.driver.session() as session:
-            # .data()를 사용하면 Node 객체가 속성 dict로 평탄화되어 labels를 잃는다.
-            # 레코드 객체를 그대로 순회해 labels/type 메타데이터를 유지한다.
             node_records = list(session.run(nodes_query, node_limit=node_limit))
             edge_records = list(session.run(edges_query, edge_limit=edge_limit))
 
-        nodes: List[Dict[str, str]] = []
-        edges: List[Dict[str, str]] = []
+        nodes: List[Dict[str, Any]] = []
+        edges: List[Dict[str, Any]] = []
 
         seen_nodes = set()
         for record in node_records:
             node = record["n"]
+            props = dict(node)
             label_set = set(node.labels)
 
+            # 노드 라벨에 따라 프론트 표시용 ID/라벨을 일관되게 만든다.
             if "Article" in label_set:
                 node_id = f"ARTICLE_{node.get('article_id') or node.get('title', '')}"
                 label = str(node.get("title", "제목 없음"))
@@ -79,7 +90,15 @@ class GraphReader:
                 continue
 
             seen_nodes.add(node_id)
-            nodes.append({"id": node_id, "label": label, "type": node_type})
+            nodes.append(
+                {
+                    "id": node_id,
+                    "label": label,
+                    "type": node_type,
+                    "title": label,
+                    "properties": props,
+                }
+            )
 
         seen_edges = set()
         for record in edge_records:
@@ -90,6 +109,7 @@ class GraphReader:
             source_id = self._node_to_id(source_node)
             target_id = self._node_to_id(target_node)
 
+            # 노드 제한으로 제외된 노드와 연결된 엣지는 함께 제외한다.
             if source_id not in seen_nodes or target_id not in seen_nodes:
                 continue
 
@@ -111,6 +131,7 @@ class GraphReader:
 
     @staticmethod
     def _node_to_id(node: neo4j.graph.Node) -> str:
+        """Neo4j 노드를 프론트 표준 ID 문자열로 변환한다."""
         label_set = set(node.labels)
         if "Article" in label_set:
             return f"ARTICLE_{node.get('article_id') or node.get('title', '')}"

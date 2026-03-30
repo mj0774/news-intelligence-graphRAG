@@ -1,10 +1,20 @@
-﻿"""뉴스 엑셀 데이터를 Neo4j 그래프로 적재하는 빌더.
+﻿from __future__ import annotations
 
-참고자료1의 GraphBuilder 단계처럼
-Article/Content/Media/Category 노드와 관계만 생성한다.
+"""뉴스 엑셀 데이터를 Neo4j 그래프로 적재하는 빌더.
+
+이 스크립트는 수집된 엑셀(`data/*.xlsx`)을 읽어서
+다음 그래프 구조를 만든다.
+- (Article)
+- (Content)
+- (Media)
+- (Category)
+- (Article)-[:HAS_CHUNK]->(Content)
+- (Media)-[:PUBLISHED]->(Article)
+- (Article)-[:BELONGS_TO]->(Category)
+
+중요: 이 파일은 "그래프 구조 생성"에 집중하며,
+임베딩/벡터인덱스 생성은 `build_vector_index.py`에서 분리 처리한다.
 """
-
-from __future__ import annotations
 
 import argparse
 import os
@@ -15,16 +25,17 @@ import neo4j
 import pandas as pd
 from dotenv import load_dotenv
 
-# 프로젝트 루트의 수집 결과 저장 폴더
+
+# 수집 엑셀 기본 경로(프로젝트 루트 기준)
 DATA_DIR = Path("data")
 
-# 청킹 기본값(참고 구현과 동일)
+# 본문 청킹 기본값
 DEFAULT_CHUNK_SIZE = 500
 DEFAULT_OVERLAP = 50
 
 
 def find_latest_excel(data_dir: Path) -> Path:
-    """data 폴더에서 가장 최근에 생성된 엑셀 파일을 반환한다."""
+    """`data/` 폴더에서 가장 최근 엑셀 파일을 찾는다."""
     files = sorted(data_dir.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not files:
         raise FileNotFoundError(f"엑셀 파일이 없습니다: {data_dir}")
@@ -32,13 +43,18 @@ def find_latest_excel(data_dir: Path) -> Path:
 
 
 def chunk_text(text: Any, chunk_size: int = DEFAULT_CHUNK_SIZE, overlap: int = DEFAULT_OVERLAP) -> List[str]:
-    """본문 텍스트를 겹침(overlap)을 두고 청킹한다."""
+    """본문 문자열을 겹침(overlap)을 두고 청킹한다.
+
+    왜 overlap을 쓰는가?
+    - 문장 경계가 chunk 중간에서 끊겨 의미가 손실되는 문제를 완화하기 위해.
+    """
     if pd.isna(text) or text == "":
         return []
 
     text = str(text)
     chunks: List[str] = []
 
+    # step이 0 이하가 되지 않게 안전장치 적용
     step = max(1, chunk_size - overlap)
     for i in range(0, len(text), step):
         chunk = text[i : i + chunk_size]
@@ -49,12 +65,15 @@ def chunk_text(text: Any, chunk_size: int = DEFAULT_CHUNK_SIZE, overlap: int = D
 
 
 def clear_database(tx: neo4j.Transaction) -> None:
-    """그래프의 모든 노드/관계를 삭제한다."""
+    """그래프 DB 전체 데이터를 삭제한다.
+
+    개발/실험 단계에서 재적재 시 중복 축적을 방지하기 위해 사용한다.
+    """
     tx.run("MATCH (n) DETACH DELETE n")
 
 
 def create_constraints(tx: neo4j.Transaction) -> None:
-    """중복 삽입 방지를 위한 유니크 제약조건을 생성한다."""
+    """중복 삽입 방지용 유니크 제약조건을 생성한다."""
     constraints = [
         "CREATE CONSTRAINT IF NOT EXISTS FOR (a:Article) REQUIRE a.article_id IS UNIQUE",
         "CREATE CONSTRAINT IF NOT EXISTS FOR (c:Content) REQUIRE c.content_id IS UNIQUE",
@@ -67,7 +86,7 @@ def create_constraints(tx: neo4j.Transaction) -> None:
 
 
 def create_article_node(tx: neo4j.Transaction, article_data: Dict[str, str]) -> None:
-    """Article 노드를 생성(또는 업데이트)한다."""
+    """Article 노드를 생성 또는 업데이트한다."""
     query = """
     MERGE (a:Article {article_id: $article_id})
     SET a.title = $title,
@@ -90,7 +109,7 @@ def create_content_nodes(
     content_chunks: List[str],
     article_data: Dict[str, str],
 ) -> None:
-    """Content 청크 노드와 HAS_CHUNK 관계를 생성한다."""
+    """Content 노드와 HAS_CHUNK 관계를 생성한다."""
     for idx, chunk in enumerate(content_chunks):
         content_id = f"{article_id}_chunk_{idx}"
 
@@ -158,7 +177,7 @@ def build_graph_from_dataframe(
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     overlap: int = DEFAULT_OVERLAP,
 ) -> None:
-    """DataFrame 한 줄씩 순회하며 그래프를 구축한다."""
+    """DataFrame를 순회하며 그래프를 구축한다."""
     with driver.session() as session:
         for idx, row in df.iterrows():
             try:
@@ -173,20 +192,20 @@ def build_graph_from_dataframe(
                     "published_date": str(row.get("published_date", "")),
                 }
 
-                # 1) Article 노드 생성
+                # 1) Article 생성
                 session.execute_write(create_article_node, article_data)
 
-                # 2) Content 노드 생성
+                # 2) Content 생성
                 if "content" in row and pd.notna(row["content"]) and row["content"] != "":
                     content_chunks = chunk_text(row["content"], chunk_size, overlap)
                     if content_chunks:
                         session.execute_write(create_content_nodes, article_id, content_chunks, article_data)
 
-                # 3) Media 노드/관계 생성
+                # 3) Media 연결
                 if "source" in row:
                     session.execute_write(create_media_node_and_relationship, article_id, row["source"])
 
-                # 4) Category 노드/관계 생성
+                # 4) Category 연결
                 if "category" in row:
                     session.execute_write(create_category_node_and_relationship, article_id, row["category"])
 
@@ -209,7 +228,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    """실행 진입점."""
+    """스크립트 실행 진입점."""
     args = parse_args()
 
     load_dotenv()

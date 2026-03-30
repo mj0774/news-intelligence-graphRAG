@@ -1,12 +1,18 @@
-﻿"""네이버 뉴스 수집 모듈.
+﻿from __future__ import annotations
 
-기능 요약:
-- 네이버 뉴스 카테고리 페이지에서 기사 URL 수집
-- 기사 상세 페이지에서 메타데이터/본문 파싱
-- 수집 결과를 루트 `data/` 폴더의 엑셀 파일로 저장
+"""네이버 뉴스 수집 모듈.
+
+이 스크립트는 Selenium 기반으로 네이버 뉴스 섹션 페이지를 순회하며
+기사 URL을 모은 뒤, 각 기사 상세 페이지에서 본문/메타데이터를 파싱해
+루트 `data/` 폴더에 엑셀 파일로 저장한다.
+
+포트폴리오 관점에서 이 파일을 읽을 때 핵심 흐름:
+1) `init_driver()`로 브라우저 드라이버 준비
+2) `get_article_links()`로 카테고리별 기사 링크 수집
+3) `parse_article_detail()`로 기사 상세 데이터 파싱
+4) `run_collection()`으로 전체 카테고리 루프 실행
+5) `save_articles_to_excel()`로 결과 저장
 """
-
-from __future__ import annotations
 
 import re
 import time
@@ -21,7 +27,11 @@ from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 
 
-# 수집 대상 카테고리(네이버 섹션 URL)
+# -----------------------------------------------------------------------------
+# 수집 대상 카테고리 정의
+# -----------------------------------------------------------------------------
+# key: 우리 프로젝트에서 사용할 카테고리명
+# value: 네이버 뉴스 섹션 URL
 CATEGORIES: Dict[str, str] = {
     "정치": "https://news.naver.com/section/100",
     "경제": "https://news.naver.com/section/101",
@@ -31,32 +41,39 @@ CATEGORIES: Dict[str, str] = {
     "세계": "https://news.naver.com/section/104",
 }
 
-# 카테고리당 기본 수집 개수
+# 카테고리당 기본 수집 기사 수
 NUM_ARTICLES_PER_CATEGORY = 10
 
-# 프로젝트 루트 기준 데이터 저장 폴더
+# 결과 파일 저장 위치(프로젝트 루트 기준)
 DATA_DIR = Path("data")
 
 
 def init_driver() -> webdriver.Chrome:
-    """크롤링에 사용할 Chrome 드라이버를 초기화한다."""
+    """Selenium Chrome 드라이버를 초기화한다.
+
+    안정성 옵션 설명:
+    - `--no-sandbox`: 제한된 환경에서 브라우저 실행 실패 방지
+    - `--disable-dev-shm-usage`: 공유 메모리 부족 이슈 완화
+    """
     service = Service(ChromeDriverManager().install())
     options = webdriver.ChromeOptions()
-    # 컨테이너/원격 환경에서도 실행 안정성을 높이기 위한 옵션
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     return webdriver.Chrome(service=service, options=options)
 
 
 def get_article_links(driver: Any, category_url: str, num_articles: int) -> List[str]:
-    """카테고리 페이지에서 기사 링크를 추출한다."""
+    """카테고리 페이지에서 기사 링크를 추출한다.
+
+    네이버 뉴스 DOM 구조는 시점에 따라 달라질 수 있으므로,
+    셀렉터를 1개에 고정하지 않고 후보 목록을 순차 시도한다.
+    """
     driver.get(category_url)
     time.sleep(3)
 
     article_links: List[str] = []
 
     try:
-        # 네이버 페이지 레이아웃 변화에 대비해 셀렉터를 여러 개 순차 시도한다.
         selectors = [
             "a.sa_text_lede",
             "a.sa_text_strong",
@@ -70,7 +87,7 @@ def get_article_links(driver: Any, category_url: str, num_articles: int) -> List
             for element in elements:
                 url = element.get_attribute("href")
 
-                # 기사 본문 URL만 남기고 댓글/중복 링크는 제외한다.
+                # 기사 본문 URL만 유지하고, 댓글/중복 링크는 제거한다.
                 if (
                     url
                     and "news.naver.com" in url
@@ -80,6 +97,7 @@ def get_article_links(driver: Any, category_url: str, num_articles: int) -> List
                 ):
                     article_links.append(url)
 
+                # 목표 개수에 도달하면 즉시 중단해 불필요한 탐색을 줄인다.
                 if len(article_links) >= num_articles:
                     break
 
@@ -95,11 +113,14 @@ def get_article_links(driver: Any, category_url: str, num_articles: int) -> List
 
 
 def parse_article_detail(driver: Any, article_url: str, category: str) -> Dict[str, str]:
-    """기사 상세 페이지에서 제목/본문/메타데이터를 파싱한다."""
+    """기사 상세 페이지에서 제목/본문/메타데이터를 파싱한다.
+
+    반환 스키마는 그래프 빌더 입력 컬럼과 맞춘다.
+    - article_id, title, content, url, published_date, source, author, category
+    """
     driver.get(article_url)
     time.sleep(1.5)
 
-    # 후속 파이프라인 스키마를 고정하기 위해 기본 키를 먼저 세팅한다.
     article_data: Dict[str, str] = {
         "article_id": "",
         "title": "",
@@ -112,14 +133,15 @@ def parse_article_detail(driver: Any, article_url: str, category: str) -> Dict[s
     }
 
     try:
-        # URL의 oid/aid를 기준으로 재현 가능한 기사 ID를 만든다.
+        # URL 패턴(oid/aid)로 재현 가능한 기사 ID를 생성한다.
         match = re.search(r"article/(\d+)/(\d+)", article_url)
         if match:
             article_data["article_id"] = f"ART_{match.group(1)}_{match.group(2)}"
         else:
+            # 예외 URL 대비 fallback ID
             article_data["article_id"] = f"ART_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
-        # 제목 후보 셀렉터를 순차 적용한다.
+        # 제목 파싱: DOM 변동 대비 다중 셀렉터 순차 시도
         title_selectors = [
             "#title_area span",
             "#ct .media_end_head_headline",
@@ -136,7 +158,7 @@ def parse_article_detail(driver: Any, article_url: str, category: str) -> Dict[s
             except Exception:
                 continue
 
-        # 본문 후보 셀렉터를 순차 적용한다.
+        # 본문 파싱: 레이아웃 버전에 맞춰 후보 셀렉터 시도
         content_selectors = [
             "#dic_area",
             "article#dic_area",
@@ -163,7 +185,7 @@ def parse_article_detail(driver: Any, article_url: str, category: str) -> Dict[s
             except Exception:
                 pass
 
-        # 발행일 추출 실패 시 현재 시각으로 보정
+        # 발행일 추출 실패 시 현재 시각을 fallback으로 사용
         try:
             date_element = driver.find_element(
                 By.CSS_SELECTOR,
@@ -199,42 +221,40 @@ def run_collection(driver: Any, num_articles_per_category: int = NUM_ARTICLES_PE
         print(f"[{category_name}] 카테고리 수집 시작...")
         print(f"{'=' * 60}")
 
-        # 1단계: 카테고리 페이지에서 링크 수집
+        # 1) 카테고리 페이지에서 기사 URL 수집
         article_links = get_article_links(driver, category_url, num_articles_per_category)
 
-        # 2단계: 링크별 상세 파싱
+        # 2) URL별 상세 데이터 파싱
         for idx, article_url in enumerate(article_links, 1):
             print(f" [{idx}/{len(article_links)}] {article_url}")
             article_data = parse_article_detail(driver, article_url, category_name)
 
-            # 제목이 비어 있으면 품질이 낮은 문서로 보고 제외한다.
+            # 제목이 없는 경우는 품질이 낮거나 파싱 실패 가능성이 높아 제외한다.
             if article_data["title"]:
                 all_articles.append(article_data)
                 print(f" ✓ 수집 완료: {article_data['title'][:50]}...")
             else:
                 print(" ✗ 수집 실패 - 제목을 찾을 수 없습니다.")
 
-            # 서버 부하 완화를 위한 짧은 간격
+            # 사이트 부하/차단 리스크를 줄이기 위한 짧은 대기
             time.sleep(0.5)
 
     return all_articles
 
 
 def save_articles_to_excel(all_articles: List[Dict[str, str]]) -> str:
-    """수집 결과를 `data/` 폴더 아래 엑셀 파일로 저장하고 경로를 반환한다."""
-    # 출력 폴더가 없으면 자동 생성한다.
+    """수집 결과를 `data/` 폴더 아래 엑셀로 저장하고 경로를 반환한다."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     df_articles = pd.DataFrame(all_articles)
     output_path = DATA_DIR / f"Articles_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     df_articles.to_excel(output_path, index=False, engine="openpyxl")
 
-    # 호출부에서 그대로 로그 출력하기 쉽도록 문자열 경로를 반환한다.
     return str(output_path)
 
 
 def main() -> None:
-    """수집 실행 진입점."""
+    """스크립트 실행 진입점."""
     driver = init_driver()
     try:
         all_articles = run_collection(driver=driver, num_articles_per_category=NUM_ARTICLES_PER_CATEGORY)
@@ -244,7 +264,7 @@ def main() -> None:
         print(f"- 총 기사 수: {len(all_articles)}")
         print(f"- 저장 파일: {output_filename}")
     finally:
-        # 예외 발생 여부와 무관하게 드라이버를 반드시 종료한다.
+        # 예외 여부와 관계없이 브라우저 프로세스를 정리한다.
         driver.quit()
 
 

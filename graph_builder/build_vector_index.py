@@ -1,10 +1,14 @@
-﻿"""Content 임베딩 생성 + 벡터 인덱스 생성 스크립트.
+﻿from __future__ import annotations
 
-참고자료1(ToolsRetriever.ipynb)의 전처리 흐름을
-프로젝트 구조에 맞춰 스크립트화한 버전이다.
+"""Content 임베딩 생성 + 벡터 인덱스 생성 스크립트.
+
+전체 파이프라인에서 이 스크립트의 위치:
+1) 수집(collector) -> 2) 그래프 생성(build_graph) -> 3) 벡터 준비(이 파일)
+
+이 파일은 다음을 수행한다.
+- Content.chunk를 임베딩해 Content.embedding 속성에 저장
+- Content.embedding 기준 벡터 인덱스(`content_vector_index`) 생성
 """
-
-from __future__ import annotations
 
 import argparse
 import os
@@ -62,7 +66,7 @@ def upsert_content_embeddings(
             if not text.strip():
                 continue
 
-            # 참고자료1과 동일하게 chunk 텍스트를 임베딩해 Content.embedding에 저장한다.
+            # chunk 텍스트를 임베딩 모델에 넣어 벡터를 생성한다.
             vector = embedder.embed_query(text)
             session.run(update_query, id=node_id, embedding=vector)
             updated += 1
@@ -74,7 +78,7 @@ def upsert_content_embeddings(
 
 
 def vector_index_exists(driver: neo4j.Driver, index_name: str) -> bool:
-    """벡터 인덱스 존재 여부를 확인한다."""
+    """지정한 이름의 벡터 인덱스 존재 여부를 확인한다."""
     query = """
     SHOW INDEXES YIELD name
     WHERE name = $index_name
@@ -90,7 +94,7 @@ def create_content_vector_index(
     index_name: str,
     dimension: int,
 ) -> None:
-    """Content.embedding 대상으로 벡터 인덱스를 생성한다."""
+    """Content.embedding 대상 벡터 인덱스를 생성한다."""
     if vector_index_exists(driver, index_name):
         print(f"벡터 인덱스가 이미 존재합니다: {index_name}")
         return
@@ -107,7 +111,7 @@ def create_content_vector_index(
 
 
 def main() -> None:
-    """실행 진입점."""
+    """스크립트 실행 진입점."""
     args = parse_args()
     load_dotenv()
 
@@ -145,4 +149,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
