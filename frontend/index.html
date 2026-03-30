@@ -3,58 +3,80 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>News GraphRAG Demo</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+    <title>GraphRAG 실시간 시각화 데모</title>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="page-bg"></div>
-    <main class="layout">
-      <section class="panel query-panel">
-        <header class="panel-head">
-          <p class="eyebrow">News Intelligence</p>
-          <h1>GraphRAG Demo</h1>
-          <p class="sub">뉴스 질의를 입력하면 결과와 관계 그래프를 함께 확인합니다.</p>
-        </header>
+    <div class="container">
+      <section class="left-panel">
+        <h1>GraphRAG Demo</h1>
+        <p class="subtitle">네이버 뉴스 기반 검색 결과를 그래프와 함께 확인합니다.</p>
 
-        <label class="label" for="queryInput">질의</label>
-        <textarea id="queryInput" rows="4" placeholder="예: 생활/문화 카테고리 최신 뉴스 3개 보여줘"></textarea>
-
-        <div class="actions">
-          <button id="searchBtn" type="button">검색하기</button>
-          <span id="statusText" class="status">샘플 모드</span>
+        <div class="input-group">
+          <label for="question">질의 입력</label>
+          <textarea id="question" rows="4" placeholder="질문을 입력하세요"></textarea>
         </div>
 
-        <article class="answer-card">
-          <h2>답변</h2>
-          <p id="answerText">아직 검색하지 않았습니다.</p>
-        </article>
+        <button id="askButton" type="button">검색하기</button>
 
-        <section class="result-list-wrap">
-          <h3>검색 기사 목록</h3>
-          <ul id="resultList" class="result-list"></ul>
-        </section>
-      </section>
+        <div class="example-queries" id="exampleQueries">
+          <h3>예시 질문</h3>
+          <div class="example-query" data-query="정치 카테고리 최신 뉴스 알려줘">정치 카테고리 최신 뉴스 알려줘</div>
+          <div class="example-query" data-query="삼성전자 관련 기사 찾아줘">삼성전자 관련 기사 찾아줘</div>
+          <div class="example-query" data-query="경제 분야 최신 뉴스는?">경제 분야 최신 뉴스는?</div>
+        </div>
 
-      <section class="panel graph-panel">
-        <header class="graph-head">
-          <h2>관계 그래프</h2>
-          <p>Article · Category · Content · Media</p>
-        </header>
+        <div class="answer-section">
+          <div id="answerBox" style="display: none">
+            <div class="answer-box">
+              <div class="answer-label">답변</div>
+              <div class="answer-content" id="answer"></div>
+            </div>
+            <div class="info-box" id="infoBox"></div>
+          </div>
 
-        <svg id="graphSvg" viewBox="0 0 900 620" aria-label="graph visualization"></svg>
-
-        <div class="legend">
-          <span class="dot article"></span>Article
-          <span class="dot category"></span>Category
-          <span class="dot content"></span>Content
-          <span class="dot media"></span>Media
+          <div class="result-box" id="resultBox" style="display: none">
+            <div class="answer-label">검색 기사 목록</div>
+            <ul id="resultList" class="result-list"></ul>
+          </div>
         </div>
       </section>
-    </main>
+
+      <section class="right-panel">
+        <div class="graph-container">
+          <div id="mynetwork"></div>
+
+          <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <div class="loading-text">검색 중...</div>
+          </div>
+
+          <div class="legend" id="legend" title="클릭해서 접기/펼치기">
+            <span class="legend-toggle">ⓘ</span>
+            <div class="legend-details">
+              <div class="legend-section">
+                <span class="legend-title">노드</span>
+                <span class="legend-item"><i class="legend-color article"></i>Article</span>
+                <span class="legend-item"><i class="legend-color category"></i>Category</span>
+                <span class="legend-item"><i class="legend-color content"></i>Content</span>
+                <span class="legend-item"><i class="legend-color media"></i>Media</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="node-info-panel" id="nodeInfoPanel">
+            <button class="close-panel" id="closePanel" type="button">×</button>
+            <div class="node-info-title" id="nodeInfoTitle">노드 정보</div>
+            <div id="nodeInfoContent"></div>
+          </div>
+        </div>
+      </section>
+    </div>
 
     <script src="./app.js"></script>
   </body>
 </html>
+
+
