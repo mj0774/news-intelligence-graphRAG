@@ -1,4 +1,4 @@
-﻿# news-intelligence-graphRAG
+﻿# news-intelligence-graphRAG 
 
 ## 1. 프로젝트 한 줄 소개
 네이버 뉴스 데이터를 그래프로 구조화하고, 질의 의도에 따라 검색 전략을 선택하는 **GraphRAG + ToolsRetriever** 시스템입니다.
