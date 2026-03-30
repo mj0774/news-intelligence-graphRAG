@@ -3,4 +3,7 @@ webdriver-manager
 pandas
 openpyxl
 neo4j
+neo4j-graphrag[openai]
 python-dotenv
+fastapi
+uvicorn
