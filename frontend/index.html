@@ -1,0 +1,60 @@
+﻿<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>News GraphRAG Demo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-bg"></div>
+    <main class="layout">
+      <section class="panel query-panel">
+        <header class="panel-head">
+          <p class="eyebrow">News Intelligence</p>
+          <h1>GraphRAG Demo</h1>
+          <p class="sub">뉴스 질의를 입력하면 결과와 관계 그래프를 함께 확인합니다.</p>
+        </header>
+
+        <label class="label" for="queryInput">질의</label>
+        <textarea id="queryInput" rows="4" placeholder="예: 생활/문화 카테고리 최신 뉴스 3개 보여줘"></textarea>
+
+        <div class="actions">
+          <button id="searchBtn" type="button">검색하기</button>
+          <span id="statusText" class="status">샘플 모드</span>
+        </div>
+
+        <article class="answer-card">
+          <h2>답변</h2>
+          <p id="answerText">아직 검색하지 않았습니다.</p>
+        </article>
+
+        <section class="result-list-wrap">
+          <h3>검색 기사 목록</h3>
+          <ul id="resultList" class="result-list"></ul>
+        </section>
+      </section>
+
+      <section class="panel graph-panel">
+        <header class="graph-head">
+          <h2>관계 그래프</h2>
+          <p>Article · Category · Content · Media</p>
+        </header>
+
+        <svg id="graphSvg" viewBox="0 0 900 620" aria-label="graph visualization"></svg>
+
+        <div class="legend">
+          <span class="dot article"></span>Article
+          <span class="dot category"></span>Category
+          <span class="dot content"></span>Content
+          <span class="dot media"></span>Media
+        </div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
