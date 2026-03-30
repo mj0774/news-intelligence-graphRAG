@@ -1,8 +1,13 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Any, Dict, List
 
 import neo4j
+
+
+def make_edge_id(source: str, target: str, rel_type: str) -> str:
+    """엣지를 프론트에서 식별할 수 있도록 고유 ID를 만든다."""
+    return f"{source}|{rel_type}|{target}"
 
 
 def build_graph_from_articles(articles: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, str]]]:
@@ -11,6 +16,7 @@ def build_graph_from_articles(articles: List[Dict[str, Any]]) -> Dict[str, List[
     edges: List[Dict[str, str]] = []
 
     seen_nodes = set()
+    seen_edges = set()
 
     def add_node(node_id: str, label: str, node_type: str) -> None:
         if node_id in seen_nodes:
@@ -18,12 +24,27 @@ def build_graph_from_articles(articles: List[Dict[str, Any]]) -> Dict[str, List[
         seen_nodes.add(node_id)
         nodes.append({"id": node_id, "label": label, "type": node_type})
 
+    def add_edge(source: str, target: str, rel_type: str) -> None:
+        edge_id = make_edge_id(source, target, rel_type)
+        if edge_id in seen_edges:
+            return
+        seen_edges.add(edge_id)
+        edges.append(
+            {
+                "id": edge_id,
+                "source": source,
+                "target": target,
+                "type": rel_type,
+            }
+        )
+
     for article in articles:
         article_id = str(article.get("article_id", ""))
         title = str(article.get("title", "제목 없음"))
         category = str(article.get("category", "미분류"))
         source = str(article.get("source", "출처미상"))
 
+        # 기사 고유키가 비어도 UI 노드가 깨지지 않게 title 기반 fallback을 둔다.
         article_node = f"ARTICLE_{article_id or title}"
         category_node = f"CATEGORY_{category}"
         media_node = f"MEDIA_{source}"
@@ -32,19 +53,25 @@ def build_graph_from_articles(articles: List[Dict[str, Any]]) -> Dict[str, List[
         add_node(category_node, category, "Category")
         add_node(media_node, source, "Media")
 
-        edges.append({"source": article_node, "target": category_node, "type": "BELONGS_TO"})
-        edges.append({"source": media_node, "target": article_node, "type": "PUBLISHED"})
+        add_edge(article_node, category_node, "BELONGS_TO")
+        add_edge(media_node, article_node, "PUBLISHED")
 
+        # Content 노드는 너무 많으면 시각화가 난잡해져 기사당 최대 3개만 노출한다.
         chunks = article.get("chunks", []) or []
-        for idx, chunk in enumerate(chunks[:2], start=1):
+        for idx, chunk in enumerate(chunks[:3], start=1):
             content_node = f"CONTENT_{article_id or title}_{idx}"
             chunk_preview = str(chunk)
             if len(chunk_preview) > 42:
                 chunk_preview = chunk_preview[:42] + "..."
             add_node(content_node, chunk_preview, "Content")
-            edges.append({"source": article_node, "target": content_node, "type": "HAS_CHUNK"})
+            add_edge(article_node, content_node, "HAS_CHUNK")
 
-    return {"nodes": nodes, "edges": edges}
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "highlighted_node_ids": [node["id"] for node in nodes],
+        "highlighted_edge_ids": [edge["id"] for edge in edges],
+    }
 
 
 def safe_article(record: Dict[str, Any]) -> Dict[str, Any]:

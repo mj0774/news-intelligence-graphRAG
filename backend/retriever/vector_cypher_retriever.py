@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Any, Dict, List
 
@@ -14,20 +14,31 @@ class VectorCypherNewsRetriever:
 
     def __init__(self, driver: neo4j.Driver, embedder: Any, index_name: str = "content_vector_index") -> None:
         self.driver = driver
+
+        # 참고자료1의 수정 쿼리를 그대로 반영한다.
         retrieval_query = """
-        OPTIONAL MATCH (node)<-[:HAS_CHUNK]-(a:Article)
-        OPTIONAL MATCH (a)-[:BELONGS_TO]->(cat:Category)
-        OPTIONAL MATCH (m:Media)-[:PUBLISHED]->(a)
+        WITH node AS content, score
+        MATCH (content)<-[:HAS_CHUNK]-(article:Article)
+        OPTIONAL MATCH (article)-[:BELONGS_TO]->(category:Category)
+        OPTIONAL MATCH (category)<-[:BELONGS_TO]-(related_article:Article)
+        WHERE related_article <> article
+
         RETURN
-            a.article_id AS article_id,
-            a.title AS title,
-            a.url AS url,
-            a.published_date AS published_date,
-            coalesce(cat.name, '') AS category,
-            coalesce(m.name, '') AS source,
-            coalesce(node.chunk, '') AS summary,
-            [coalesce(node.chunk, '')] AS chunks,
-            score
+            content.content_id AS content_id,
+            content.chunk AS chunk,
+            content.title AS content_title,
+            article.article_id AS article_id,
+            article.title AS article_title,
+            article.url AS article_url,
+            article.published_date AS article_date,
+            category.name AS category_name,
+            score AS similarity_score,
+            collect(DISTINCT {
+                article_id: related_article.article_id,
+                title: related_article.title,
+                url: related_article.url,
+                published_date: related_article.published_date
+            })[0..5] AS related_articles
         """
 
         self.retriever = VectorCypherRetriever(
@@ -40,18 +51,19 @@ class VectorCypherNewsRetriever:
 
     @staticmethod
     def _result_formatter(record: neo4j.Record) -> RetrieverResultItem:
+        chunk = str(record.get("chunk", ""))
         return RetrieverResultItem(
-            content=str(record.get("summary", "")),
+            content=chunk,
             metadata={
                 "article_id": str(record.get("article_id", "")),
-                "title": str(record.get("title", "")),
-                "url": str(record.get("url", "")),
-                "published_date": str(record.get("published_date", "")),
-                "category": str(record.get("category", "")),
-                "source": str(record.get("source", "")),
-                "summary": str(record.get("summary", ""))[:260],
-                "chunks": record.get("chunks", []),
-                "score": record.get("score"),
+                "title": str(record.get("article_title", "")),
+                "url": str(record.get("article_url", "")),
+                "published_date": str(record.get("article_date", "")),
+                "category": str(record.get("category_name", "")),
+                "source": "",
+                "summary": chunk[:260],
+                "chunks": [chunk] if chunk else [],
+                "score": record.get("similarity_score"),
             },
         )
 

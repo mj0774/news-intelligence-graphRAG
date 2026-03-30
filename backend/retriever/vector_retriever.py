@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Any, Dict, List
 
@@ -27,6 +27,7 @@ class VectorNewsRetriever:
         score = record.get("score")
         props = dict(node) if node is not None else {}
 
+        # 벡터 인덱스가 반환한 Content 노드에서 기사 키와 청크 본문을 꺼낸다.
         article_id = str(props.get("article_id", ""))
         chunk = str(props.get("chunk", ""))
 
@@ -43,6 +44,7 @@ class VectorNewsRetriever:
     def search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         result = self.retriever.search(query_text=query, top_k=top_k)
         articles = items_to_articles(result.items)
+        # 그래프에서 카테고리/언론사/추가 청크를 보강해 응답 품질을 맞춘다.
         return enrich_articles_from_graph(self.driver, articles)
 
     def to_tool(self):

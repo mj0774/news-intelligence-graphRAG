@@ -1,10 +1,13 @@
-﻿# Backend 실행
+# Backend 실행
 
 ```bash
 uvicorn backend.api.main:app --reload
 ```
 
+## Endpoints
+
 - Health: `GET http://localhost:8000/api/health`
+- Graph: `GET http://localhost:8000/api/graph`
 - Search: `POST http://localhost:8000/api/search`
 
 예시 요청:

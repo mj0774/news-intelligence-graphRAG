@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.core.container import AppContainer, build_container
-from backend.schemas import SearchRequest, SearchResponse
+from backend.schemas import GraphResponse, SearchRequest, SearchResponse
 from backend.services.retriever_service import RetrieverService
 
 
@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
 
 
 # 백엔드 앱 초기화
-app = FastAPI(title="News GraphRAG Backend", version="0.3.1", lifespan=lifespan)
+app = FastAPI(title="News GraphRAG Backend", version="0.4.0", lifespan=lifespan)
 
 # 프론트 로컬 개발 편의를 위해 CORS는 일단 전체 허용한다.
 app.add_middleware(
@@ -46,6 +46,13 @@ def get_retriever_service(request: Request) -> RetrieverService:
 def health() -> dict[str, str]:
     """헬스체크 엔드포인트."""
     return {"status": "ok"}
+
+
+@app.get("/api/graph", response_model=GraphResponse)
+def graph(service: RetrieverService = Depends(get_retriever_service)) -> GraphResponse:
+    """프론트 초기 렌더링용 전체 그래프를 반환한다."""
+    result = service.graph()
+    return GraphResponse(**result)
 
 
 @app.post("/api/search", response_model=SearchResponse)

@@ -34,9 +34,17 @@ class GraphNode(BaseModel):
 class GraphEdge(BaseModel):
     """그래프 시각화용 엣지 모델."""
 
+    id: str
     source: str
     target: str
     type: str
+
+
+class GraphResponse(BaseModel):
+    """그래프 전체 조회 응답 모델."""
+
+    nodes: List[GraphNode]
+    edges: List[GraphEdge]
 
 
 class SearchResponse(BaseModel):
@@ -47,3 +55,5 @@ class SearchResponse(BaseModel):
     articles: List[ArticleItem]
     nodes: List[GraphNode]
     edges: List[GraphEdge]
+    highlighted_node_ids: List[str]
+    highlighted_edge_ids: List[str]

@@ -1,10 +1,11 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import neo4j
 from neo4j_graphrag.embeddings import OpenAIEmbeddings
 from neo4j_graphrag.llm import OpenAILLM
 
 from backend.core.config import Settings, load_settings
+from backend.retriever.graph_reader import GraphReader
 from backend.retriever.tools_router import ToolsRouter
 from backend.services.retriever_service import RetrieverService
 
@@ -37,7 +38,12 @@ class AppContainer:
             llm=self.llm,
             embedder=self.embedder,
         )
-        self.retriever_service = RetrieverService(router=self.tools_router)
+        self.graph_reader = GraphReader(driver=self.driver)
+
+        self.retriever_service = RetrieverService(
+            router=self.tools_router,
+            graph_provider=self.graph_reader,
+        )
 
     def close(self) -> None:
         """앱 종료 시 커넥션을 정리한다."""
