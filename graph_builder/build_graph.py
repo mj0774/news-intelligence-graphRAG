@@ -1,7 +1,7 @@
 ﻿"""뉴스 엑셀 데이터를 Neo4j 그래프로 적재하는 빌더.
 
-참고 GraphBuilder.ipynb 로직을 기준으로,
-프로젝트 경로(data/, graph_builder/)만 맞춰 스크립트화한 버전이다.
+참고자료1의 GraphBuilder 단계처럼
+Article/Content/Media/Category 노드와 관계만 생성한다.
 """
 
 from __future__ import annotations
@@ -39,7 +39,8 @@ def chunk_text(text: Any, chunk_size: int = DEFAULT_CHUNK_SIZE, overlap: int = D
     text = str(text)
     chunks: List[str] = []
 
-    for i in range(0, len(text), chunk_size - overlap):
+    step = max(1, chunk_size - overlap)
+    for i in range(0, len(text), step):
         chunk = text[i : i + chunk_size]
         if chunk.strip():
             chunks.append(chunk.strip())
@@ -62,10 +63,7 @@ def create_constraints(tx: neo4j.Transaction) -> None:
     ]
 
     for constraint in constraints:
-        try:
-            tx.run(constraint)
-        except Exception as exc:
-            print(f"제약조건 생성 중 오류: {exc}")
+        tx.run(constraint)
 
 
 def create_article_node(tx: neo4j.Transaction, article_data: Dict[str, str]) -> None:
@@ -93,8 +91,8 @@ def create_content_nodes(
     article_data: Dict[str, str],
 ) -> None:
     """Content 청크 노드와 HAS_CHUNK 관계를 생성한다."""
-    for i, chunk in enumerate(content_chunks):
-        content_id = f"{article_id}_chunk_{i}"
+    for idx, chunk in enumerate(content_chunks):
+        content_id = f"{article_id}_chunk_{idx}"
 
         query = """
         MERGE (c:Content {content_id: $content_id})
@@ -113,7 +111,7 @@ def create_content_nodes(
             title=article_data["title"],
             url=article_data["url"],
             published_date=article_data["published_date"],
-            chunk_index=i,
+            chunk_index=idx,
         )
 
         relationship_query = """
@@ -129,11 +127,7 @@ def create_media_node_and_relationship(tx: neo4j.Transaction, article_id: str, s
     if pd.isna(source) or source == "":
         return
 
-    media_query = """
-    MERGE (m:Media {name: $source})
-    RETURN m
-    """
-    tx.run(media_query, source=source)
+    tx.run("MERGE (m:Media {name: $source}) RETURN m", source=source)
 
     relationship_query = """
     MATCH (a:Article {article_id: $article_id})
@@ -148,11 +142,7 @@ def create_category_node_and_relationship(tx: neo4j.Transaction, article_id: str
     if pd.isna(category) or category == "":
         return
 
-    category_query = """
-    MERGE (cat:Category {name: $category})
-    RETURN cat
-    """
-    tx.run(category_query, category=category)
+    tx.run("MERGE (cat:Category {name: $category}) RETURN cat", category=category)
 
     relationship_query = """
     MATCH (a:Article {article_id: $article_id})
@@ -172,33 +162,34 @@ def build_graph_from_dataframe(
     with driver.session() as session:
         for idx, row in df.iterrows():
             try:
-                article_id = row.get("article_id", "")
+                article_id = str(row.get("article_id", "")).strip()
+                if not article_id:
+                    continue
 
                 article_data = {
                     "article_id": article_id,
-                    "title": row.get("title", ""),
-                    "url": row.get("url", ""),
+                    "title": str(row.get("title", "")),
+                    "url": str(row.get("url", "")),
                     "published_date": str(row.get("published_date", "")),
                 }
 
-                # 1. Article 노드 생성
+                # 1) Article 노드 생성
                 session.execute_write(create_article_node, article_data)
 
-                # 2. Content 노드들 생성 (content 컬럼이 있는 경우)
+                # 2) Content 노드 생성
                 if "content" in row and pd.notna(row["content"]) and row["content"] != "":
                     content_chunks = chunk_text(row["content"], chunk_size, overlap)
                     if content_chunks:
                         session.execute_write(create_content_nodes, article_id, content_chunks, article_data)
 
-                # 3. Media 노드와 관계 생성
+                # 3) Media 노드/관계 생성
                 if "source" in row:
                     session.execute_write(create_media_node_and_relationship, article_id, row["source"])
 
-                # 4. Category 노드와 관계 생성
+                # 4) Category 노드/관계 생성
                 if "category" in row:
                     session.execute_write(create_category_node_and_relationship, article_id, row["category"])
 
-                # 진행상황 출력
                 if (idx + 1) % 10 == 0:
                     print(f"진행률: {idx + 1}/{len(df)} ({((idx + 1) / len(df) * 100):.1f}%)")
 
@@ -221,12 +212,10 @@ def main() -> None:
     """실행 진입점."""
     args = parse_args()
 
-    # .env에서 Neo4j 접속정보를 로드한다.
     load_dotenv()
     uri = os.getenv("NEO4J_URI", "neo4j://localhost:7687")
     auth = (os.getenv("NEO4J_USERNAME", "neo4j"), os.getenv("NEO4J_PASSWORD", "password"))
 
-    # 입력 파일 경로: 지정값 우선, 없으면 data 폴더 최신 파일 자동 선택
     input_path = Path(args.input) if args.input else find_latest_excel(DATA_DIR)
     print(f"입력 파일: {input_path}")
 
@@ -247,6 +236,7 @@ def main() -> None:
             chunk_size=args.chunk_size,
             overlap=args.overlap,
         )
+
         print("그래프 빌드 완료")
     finally:
         driver.close()
