@@ -1,4 +1,4 @@
-﻿const API_BASE = "http://localhost:8000";
+const API_BASE = "http://localhost:8000";
 
 let network;
 let nodes;
@@ -48,15 +48,16 @@ async function initGraph() {
     allNodesData = data.nodes || [];
     allEdgesData = data.edges || [];
 
+    // 참고자료2처럼 초기 상태는 전체 회색으로 보여준다.
     const visNodes = allNodesData.map((node) => ({
       id: node.id,
       label: shorten(node.label, 25),
-      title: `${node.type}: ${node.label}`,
+      title: `${node.type}: ${node.title || node.label}`,
       color: {
-        background: COLOR_BY_LABEL[node.type] || "#E0E0E0",
-        border: "#8f8f8f",
+        background: "#E0E0E0",
+        border: "#BDBDBD",
       },
-      font: { size: 12, color: "#333" },
+      font: { size: 12, color: "#757575" },
       shape: "dot",
       size: 15,
     }));
@@ -156,7 +157,6 @@ async function askQuestion() {
 
     const data = await response.json();
     renderAnswer(data);
-    renderArticleList(data.articles || []);
     highlightSubgraph(data.highlighted_node_ids || [], data.highlighted_edge_ids || []);
   } catch (error) {
     alert(`검색 실패: ${error.message}`);
@@ -170,63 +170,33 @@ function renderAnswer(data) {
   const answerBox = document.getElementById("answerBox");
   const answerEl = document.getElementById("answer");
   const infoBox = document.getElementById("infoBox");
-
-  answerEl.innerHTML = marked.parse(data.answer || "답변이 없습니다.");
-  infoBox.innerHTML = `<strong>사용된 Retriever:</strong> ${data.used_tool || "unknown"}`;
-  answerBox.style.display = "block";
-}
-
-function renderArticleList(articles) {
   const resultBox = document.getElementById("resultBox");
-  const resultList = document.getElementById("resultList");
 
-  resultList.innerHTML = "";
+  const usedTool = data.used_tool || "unknown";
+  const answer = data.answer || "답변이 없습니다.";
 
-  if (!articles.length) {
-    const li = document.createElement("li");
-    li.className = "result-item";
-    li.innerHTML = "<p>검색된 기사가 없습니다.</p>";
-    resultList.appendChild(li);
-    resultBox.style.display = "block";
-    return;
-  }
+  answerEl.innerHTML = marked.parse(answer);
+  answerBox.style.display = "block";
 
-  articles.forEach((article, idx) => {
-    const li = document.createElement("li");
-    li.className = "result-item";
-
-    const urlHtml = article.url
-      ? `<a href="${article.url}" target="_blank" rel="noreferrer">원문 보기</a>`
-      : "URL 없음";
-
-    li.innerHTML = `
-      <p><strong>${idx + 1}. ${article.title || "제목 없음"}</strong></p>
-      <p>${article.published_date || "일시 없음"} · ${article.source || "출처 없음"} · ${article.category || "카테고리 없음"}</p>
-      <p>${article.summary || "요약 없음"}</p>
-      <p>${urlHtml}</p>
-    `;
-    resultList.appendChild(li);
-  });
-
-  resultBox.style.display = "block";
+  // 검색 방법은 답변 박스 하단(info-box)에서 표시한다.
+  infoBox.style.display = "block";
+  infoBox.innerHTML = `<strong>검색 방법:</strong> ${usedTool}`;
+  resultBox.style.display = "none";
 }
-
 function resetGraph() {
   if (!nodes || !edges) return;
 
+  // 검색 전 기본 상태를 다시 회색으로 맞춘다.
   nodes.get().forEach((node) => {
-    const sourceNode = allNodesData.find((n) => n.id === node.id);
-    const color = COLOR_BY_LABEL[sourceNode?.type] || "#E0E0E0";
-
     nodes.update({
       id: node.id,
       color: {
-        background: color,
-        border: "#8f8f8f",
+        background: "#E0E0E0",
+        border: "#BDBDBD",
       },
       borderWidth: 2,
       size: 15,
-      font: { size: 12, color: "#333" },
+      font: { size: 12, color: "#757575" },
     });
   });
 
@@ -246,7 +216,7 @@ function highlightSubgraph(nodeIds, edgeIds) {
   const nodeIdSet = new Set(nodeIds);
   const edgeIdSet = new Set(edgeIds);
 
-  // 검색 결과에 해당하는 노드만 원래 타입 색상으로 활성화한다.
+  // 검색 결과에 해당하는 노드만 타입 색상으로 활성화한다.
   nodeIds.forEach((id) => {
     const sourceNode = allNodesData.find((n) => n.id === id);
     const color = COLOR_BY_LABEL[sourceNode?.type] || "#97C2FC";
@@ -286,6 +256,46 @@ function highlightSubgraph(nodeIds, edgeIds) {
   }
 }
 
+function pickNodeFields(node) {
+  const props = node.properties || {};
+
+  const byType = {
+    Article: ["article_id", "title", "published_date", "url"],
+    Category: ["name"],
+    Media: ["name"],
+    Content: ["content_id", "article_id", "chunk_index", "chunk"],
+  };
+
+  const keys = byType[node.type] || Object.keys(props);
+  const rows = [["id", node.id], ["type", node.type]];
+
+  keys.forEach((key) => {
+    if (key === "embedding" || key === "embeddings") return;
+    const value = props[key];
+    if (value === undefined || value === null || value === "") return;
+    rows.push([key, value]);
+  });
+
+  return rows;
+}
+
+function renderNodeValue(key, value) {
+  if (typeof value !== "string") {
+    return escapeHtml(JSON.stringify(value));
+  }
+
+  if (key === "url" && value.startsWith("http")) {
+    const safeUrl = escapeHtml(value);
+    return `<a href="${safeUrl}" target="_blank" rel="noreferrer">${safeUrl}</a>`;
+  }
+
+  if (key === "chunk" && value.length > 160) {
+    return escapeHtml(`${value.slice(0, 160)}...`);
+  }
+
+  return escapeHtml(value);
+}
+
 function showNodeInfo(nodeId) {
   const panel = document.getElementById("nodeInfoPanel");
   const title = document.getElementById("nodeInfoTitle");
@@ -294,21 +304,15 @@ function showNodeInfo(nodeId) {
   const node = allNodesData.find((n) => n.id === nodeId);
   if (!node) return;
 
-  title.textContent = `${node.type}: ${node.label}`;
-
-  // 프론트 노드 정보 패널에서는 핵심 식별 정보만 출력한다.
-  const rows = [
-    ["id", node.id],
-    ["type", node.type],
-    ["label", node.label],
-  ];
+  title.textContent = `${node.type}: ${node.title || node.label}`;
+  const rows = pickNodeFields(node);
 
   content.innerHTML = rows
     .map(
       ([k, v]) => `
       <div class="node-info-item">
-        <span class="node-info-key">${k}:</span>
-        <span class="node-info-value">${escapeHtml(String(v))}</span>
+        <span class="node-info-key">${escapeHtml(String(k))}:</span>
+        <span class="node-info-value">${renderNodeValue(String(k), v)}</span>
       </div>
     `,
     )
@@ -316,7 +320,6 @@ function showNodeInfo(nodeId) {
 
   panel.classList.add("active");
 }
-
 function closeNodeInfo() {
   document.getElementById("nodeInfoPanel").classList.remove("active");
 }
@@ -334,4 +337,3 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
-

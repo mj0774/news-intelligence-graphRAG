@@ -1,4 +1,4 @@
-﻿* {
+* {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -417,4 +417,22 @@ button:disabled {
   .graph-container {
     min-height: 520px;
   }
+}
+
+/* 답변 텍스트/링크가 긴 경우에도 패널 밖으로 넘치지 않도록 처리 */
+.answer-content,
+.answer-content p,
+.answer-content li,
+.answer-content strong,
+.answer-content em,
+.answer-content code,
+.answer-content a,
+.info-box {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.answer-content a {
+  color: #b45309;
+  text-decoration: underline;
 }
