@@ -35,3 +35,6 @@ Thumbs.db
 *.parquet
 *.db
 *.sqlite
+
+# Local assets
+assets/
